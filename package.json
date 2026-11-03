@@ -1,0 +1,20 @@
+{
+  "name": "media-agent-failure-journal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/media_failure_route.ts",
+    "demo": "tsx src/media_failure_route.ts --demo",
+    "test": "tsx --test test/media_failure_route.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}
