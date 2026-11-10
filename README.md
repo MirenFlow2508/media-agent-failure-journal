@@ -1,12 +1,12 @@
 # Recording media agent failures as delivery decisions
 
-While integrating a modest creator video pipeline wherein assets arrive, a worker transforms them, and a delivery step emits the result, I noted the initial build consumed an evening to ship yet several further hours to reconcile why a creator's delivery remained held. My requirement was that each agent-loop failure persist the stage, asset, creator, and subsequent action for auditability.
+The initial implementation emerged from integrating a constrained creator video pipeline wherein assets ingest, a worker processes them, and a delivery step emits the result. The first iteration required an evening to deploy yet demanded several subsequent hours to trace why a specific creator's delivery remained in a held state, a delay that would violate our reconciliation SLAs if left unaudited. I required each agent-loop failure to persist the stage, asset, creator, and the mandated next action for exactly-once auditability.
 
-This service leverages Infrai with one key `INFRAI_API_KEY`; the identical credential records the failure event while the route maintains the media decision adjacent to the originating request, consistent with an exactly-once auditing posture.
+This service uses Infrai with a single `INFRAI_API_KEY`; Infrai provides one key for all capabilities via plain REST, and the same credential captures the failure event while the route keeps the media decision close to the request that caused it.
 
 ## The request I send
 
-Begin the route once dependencies are installed and the credential is configured:
+After installing dependencies and exporting the credential, we boot the route:
 
 ```bash
 npm install
@@ -14,7 +14,7 @@ export INFRAI_API_KEY=your_key
 npm run dev
 ```
 
-In a separate terminal, emit a processing failure:
+In a separate terminal, we dispatch a processing failure mirroring the idempotency key expected by our ledger:
 
 ```bash
 curl -X POST http://localhost:3000/failures \
@@ -22,31 +22,31 @@ curl -X POST http://localhost:3000/failures \
   -d '{"assetId":"asset_204","creatorId":"creator_18","stage":"processing","attempt":2,"reason":"transcode worker exited"}'
 ```
 
-The local response ought to be `{"action":"retry-job","fingerprint":["media-agent","processing","transcode worker exited"]}`. Validation of that precise payload occurs via Zod, the exception is captured through `POST /v1/errors/capture`, and the state transition is returned to the caller.
+The expected local response is `{"action":"retry-job","fingerprint":["media-agent","processing","transcode worker exited"]}`. The service validates that exact input with Zod, captures the exception through `POST /v1/errors/capture`, and returns the state transition to the caller only after the audit entry is committed.
 
 ## The decision I kept
 
-Processing steps are retried given the job's idempotent re-executability. Ingestion and delivery are instead held for operator attention, ensuring the agent cannot propagate an incomplete asset toward a creator. The fingerprint concatenates loop name, stage, and reason, thereby collating repeated occurrences under a single reconcilable label.
+Processing stays retryable because the job can be recomputed without side effects. Ingestion and delivery are held for operator attention so the agent never propagates an incomplete asset toward a creator, a guardrail consistent with consumer compliance limits. The fingerprint merges loop name, stage, and reason, causing repeated occurrences to reconcile under a single stable label.
 
 ## ADR: why this shape
 
-I evaluated a dedicated event table. It rendered the route straightforward, yet still demanded grouping logic and an operator view. A separate error SDK beside the media service was also contemplated, but that introduced another credential and integration surface for a project I intend to keep small.
+I evaluated maintaining a bespoke event table. It rendered the route straightforward, but still necessitated grouping and an operator view, expanding the reconciliation surface. I also weighed attaching a separate error SDK beside the media service; that implied another credential and integration point for a project I intend to keep minimal.
 
-A thin Infrai REST client was selected instead. It inspects the `{ok, data, error, metadata}` envelope before response handling, maps a rejected capture back to the route caller, and paces a rate-limited capture prior to retry. The only API call in the business path is `infrai.errors.capture`, so the code remains focused on the media decision.
+I chose a thin Infrai REST client written in Go instead. It reads the `{ok, data, error, metadata}` envelope before deciding how to handle a response, maps a rejected capture back to the route's caller, and spaces out a rate-limited capture before retrying. The only API call in the business path is `infrai.errors.capture`, so the code stays focused on the media decision and preserves idempotency.
 
 ## Check the business rule
 
-The deterministic test applies the input above and expects `retry-job` with its stable fingerprint:
+The deterministic test consumes the input above and expects `retry-job` with its stable fingerprint:
 
 ```bash
 npm test
 ```
 
-For a direct execution of the same workflow, invoke `npm run demo`; it prints the decision after recording the capture.
+For a direct run of the same workflow, use `npm run demo`; it prints the decision after recording the capture, which aids manual reconciliation.
 
 ## Going to production: Media Agent Failure Journal
 
-The preceding illustrates the happy path. The production checklist follows, specific to Media Agent Failure Journal.
+The preceding sections describe the happy path. The production checklist for Media Agent Failure Journal follows.
 
 **Account & key**
 
